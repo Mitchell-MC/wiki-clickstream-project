@@ -28,7 +28,9 @@ from pathlib import Path
 
 # Must be set before the JVM starts so the driver heap is large enough
 # for aggregating 200M+ rows without RowBasedKeyValueBatch OOM.
-os.environ.setdefault("SPARK_DRIVER_MEMORY", "4g")
+# Note: PYSPARK_DRIVER_MEMORY (not SPARK_DRIVER_MEMORY) is what PySpark reads
+# when launching the py4j gateway JVM with `python script.py`.
+os.environ.setdefault("PYSPARK_DRIVER_MEMORY", "4g")
 
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
@@ -98,6 +100,11 @@ def build_spark() -> SparkSession:
         # Give execution memory a bigger share; no caching so storage share can be minimal
         .config("spark.memory.fraction", "0.8")
         .config("spark.memory.storageFraction", "0.1")
+        # Allow the shuffle sorter and hash-agg to allocate off-heap pages so
+        # the JVM heap is not exhausted during the (month, prev, curr) groupBy
+        # which can produce tens of millions of intermediate rows.
+        .config("spark.memory.offHeap.enabled", "true")
+        .config("spark.memory.offHeap.size",    "2g")
         # Allow reading many small files efficiently
         .config("spark.sql.files.maxPartitionBytes", "128m")
         .getOrCreate()
