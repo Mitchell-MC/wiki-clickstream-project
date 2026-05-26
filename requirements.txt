@@ -1,0 +1,12 @@
+# Batch + downloader
+pyspark>=3.5.0
+requests>=2.31.0
+
+# SSE → Kafka producer
+sseclient-py>=1.8.0
+kafka-python>=2.0.2
+
+# Notebooks / EDA (optional)
+jupyter>=1.0.0
+pandas>=2.0.0
+matplotlib>=3.8.0
