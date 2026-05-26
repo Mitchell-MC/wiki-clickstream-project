@@ -26,6 +26,10 @@ import sys
 import os
 from pathlib import Path
 
+# Must be set before the JVM starts so the driver heap is large enough
+# for aggregating 200M+ rows without RowBasedKeyValueBatch OOM.
+os.environ.setdefault("SPARK_DRIVER_MEMORY", "4g")
+
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.types import (
@@ -58,6 +62,12 @@ def build_spark() -> SparkSession:
         SparkSession.builder
         .appName(f"{config.SPARK_APP_NAME}-batch")
         .master(config.SPARK_MASTER)
+        .config("spark.driver.memory", "4g")
+        # More shuffle partitions → smaller per-task hash tables → less agg memory
+        .config("spark.sql.shuffle.partitions", "400")
+        # Give execution memory a bigger share; no caching so storage share can be minimal
+        .config("spark.memory.fraction", "0.8")
+        .config("spark.memory.storageFraction", "0.1")
         # Allow reading many small files efficiently
         .config("spark.sql.files.maxPartitionBytes", "128m")
         .getOrCreate()
@@ -157,8 +167,8 @@ def main():
 
     print("Loading clickstream data …")
     df = load_clickstream(spark)
-    df.cache()
-
+    # No cache — 212M rows won't fit in driver memory and cache eviction
+    # competes with the aggregation hash tables (which can't spill).
     row_count = df.count()
     print(f"Loaded {row_count:,} rows across {df.select('month').distinct().count()} month(s)")
 
@@ -169,12 +179,16 @@ def main():
     write(top_link_pairs(df),            "top_link_pairs")
     write(monthly_trend(df),             "monthly_trend", partition_by=["month"])
 
-    # Quick console preview
+    # Preview from already-written Parquet (avoids re-scanning 212M rows)
     print("\n── Top 10 articles by inbound clicks ──")
-    top_articles_by_indegree(df).show(10, truncate=False)
+    spark.read.parquet(
+        str(Path(config.BATCH_OUTPUT_DIR).resolve() / "top_articles_indegree")
+    ).show(10, truncate=False)
 
     print("\n── Top 10 internal link pairs ──")
-    top_link_pairs(df).show(10, truncate=False)
+    spark.read.parquet(
+        str(Path(config.BATCH_OUTPUT_DIR).resolve() / "top_link_pairs")
+    ).show(10, truncate=False)
 
     spark.stop()
     print("Batch job complete.")
