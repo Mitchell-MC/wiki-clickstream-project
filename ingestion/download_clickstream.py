@@ -15,6 +15,7 @@ Usage:
   python ingestion/download_clickstream.py
 """
 
+import gzip
 import os
 import sys
 import time
@@ -40,6 +41,23 @@ def _dest_path(month: str) -> Path:
     raw_dir.mkdir(parents=True, exist_ok=True)
     filename = f"clickstream-{config.CLICKSTREAM_WIKI}-{month}.tsv.gz"
     return raw_dir / filename
+
+
+def _is_valid_gzip(path: Path) -> bool:
+    """
+    Return True if *path* is a complete, readable gzip archive.
+
+    Reads the file in 64 KB chunks so the integrity check does not require
+    loading the entire decompressed content into memory.  An incomplete or
+    corrupted download raises EOFError, OSError, or gzip.BadGzipFile.
+    """
+    try:
+        with gzip.open(path, "rb") as fh:
+            while fh.read(65_536):
+                pass
+        return True
+    except (EOFError, OSError, gzip.BadGzipFile):
+        return False
 
 
 class _ProgressLogger:
@@ -80,8 +98,12 @@ def download_month(month: str, force: bool = False) -> Path:
     dest = _dest_path(month)
 
     if dest.exists() and not force:
-        print(f"[skip]     {dest.name} already exists")
-        return dest
+        # Guard against partial downloads from a previous interrupted run.
+        # If the gzip file is corrupt, treat it as missing and re-download.
+        if _is_valid_gzip(dest):
+            print(f"[skip]     {dest.name} already exists and is valid")
+            return dest
+        print(f"[redownload] {dest.name} exists but is corrupt — re-downloading")
 
     print(f"[download] {url}")
     tmp = dest.with_suffix(".tmp")

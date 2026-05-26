@@ -27,6 +27,16 @@ RAW_DATA_DIR = "data/raw"
 # Local directory for Parquet output of batch jobs
 BATCH_OUTPUT_DIR = "data/batch_output"
 
+# Quarantine zone: records that fail the data quality contract are written here,
+# partitioned by month so each re-run overwrites only the affected partition.
+QUARANTINE_DIR = "data/quarantine"
+
+# Partition overwrite mode for batch Parquet writes.
+# "dynamic" → Spark replaces only the partitions present in the current
+# DataFrame, leaving all other historical partitions untouched.  This is the
+# key knob that makes every batch write idempotent.
+BATCH_PARTITION_OVERWRITE_MODE = "dynamic"
+
 # ── Kafka ──────────────────────────────────────────────────────────────────────
 KAFKA_BOOTSTRAP_SERVERS = "localhost:9092"
 KAFKA_TOPIC_EDITS = "wiki-edits"

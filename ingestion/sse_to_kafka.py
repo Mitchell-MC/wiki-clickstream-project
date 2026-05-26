@@ -141,7 +141,26 @@ def run(producer: KafkaProducer):
                     continue
 
                 enriched = _enrich(data)
-                producer.send(config.KAFKA_TOPIC_EDITS, value=enriched)
+
+                # Set a deterministic Kafka message key so that:
+                #   1. All events for the same article are routed to the same
+                #      partition (ordering guarantee within a wiki+revision).
+                #   2. Consumer-side deduplication can use this key as a
+                #      globally-unique event identifier without content hashing.
+                # Key format: b"{wiki}:{new_revision_id}" when available;
+                # falls back to b"{wiki}:{timestamp}:{title}" for events
+                # (e.g. log entries) that carry no revision object.
+                revision = enriched.get("revision") or {}
+                rev_new  = revision.get("new") if isinstance(revision, dict) else None
+                wiki_id  = enriched.get("wiki", "")
+                if rev_new and wiki_id:
+                    msg_key = f"{wiki_id}:{rev_new}".encode("utf-8")
+                else:
+                    ts    = enriched.get("timestamp", "")
+                    title = enriched.get("title", "")
+                    msg_key = f"{wiki_id}:{ts}:{title}".encode("utf-8")
+
+                producer.send(config.KAFKA_TOPIC_EDITS, key=msg_key, value=enriched)
                 total_published += 1
 
                 if total_published % 500 == 0:

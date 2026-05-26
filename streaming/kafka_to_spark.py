@@ -72,9 +72,15 @@ def build_spark() -> SparkSession:
         .master(config.SPARK_MASTER)
         # Pull the Kafka connector when running locally via python (not spark-submit)
         .config("spark.jars.packages", config.SPARK_KAFKA_PACKAGE)
-        # Avoid INFO flood from Kafka consumer
-        .config("spark.sql.streaming.stateStore.providerClass",
-                "org.apache.spark.sql.execution.streaming.state.HDFSBackedStateStoreProvider")
+        # Force loopback binding — avoids Windows hostname-resolution hangs that
+        # prevent the BlockManager from registering during local-mode startup.
+        .config("spark.driver.host", "127.0.0.1")
+        .config("spark.driver.bindAddress", "127.0.0.1")
+        # ── Vectorised Parquet writes ─────────────────────────────────────────
+        # Note: AQE (spark.sql.adaptive.enabled) is intentionally omitted here.
+        # Spark 3.5 does not support AQE in streaming DataFrames and emits a
+        # warning if it is set.  AQE is only enabled in the batch SparkSession.
+        .config("spark.sql.parquet.columnarReaderBatchSize", "4096")
     )
     spark = builder.getOrCreate()
     spark.sparkContext.setLogLevel("WARN")
@@ -99,8 +105,15 @@ def read_kafka(spark: SparkSession):
     # Kafka value is bytes → decode to string → parse JSON
     parsed = (
         raw
-        .select(F.from_json(F.col("value").cast("string"), EDIT_SCHEMA).alias("e"))
-        .select("e.*")
+        # Retain the Kafka message key alongside the parsed payload.
+        # The producer sets key = b"{wiki}:{revision_id}", which is a globally
+        # unique identifier for every edit event.  We use it below to deduplicate
+        # re-delivered messages without hashing the full payload.
+        .select(
+            F.col("key"),
+            F.from_json(F.col("value").cast("string"), EDIT_SCHEMA).alias("e"),
+        )
+        .select("key", "e.*")
         # Convert Unix epoch → proper Spark timestamp for windowing
         .withColumn("event_time", F.to_timestamp(F.col("timestamp")))
         # Derive byte-delta for size change
@@ -111,6 +124,27 @@ def read_kafka(spark: SparkSession):
         # Drop null event_times (malformed events)
         .filter(F.col("event_time").isNotNull())
     )
+
+    # ── Watermark-bounded deduplication ─────────────────────────────────────────
+    # Kafka at-least-once delivery and SSE reconnects can produce duplicate
+    # messages.  dropDuplicates on the message key (set by the producer to
+    # "{wiki}:{revision_id}") removes re-delivered copies of the same edit.
+    #
+    # Spark 3.5 enforces a single watermark per query plan: calling
+    # withWatermark more than once on the same column raises an
+    # AnalysisException.  The watermark is therefore defined HERE (once) at
+    # the widest tolerance needed by any downstream aggregation (5 minutes
+    # for top_editors_sliding).  The aggregation functions must NOT call
+    # withWatermark themselves — they inherit this definition.
+    parsed = (
+        parsed
+        .withColumn("_kafka_key", F.col("key").cast("string"))
+        .drop("key")
+        .withWatermark("event_time", "5 minutes")
+        .dropDuplicates(["_kafka_key"])
+        .drop("_kafka_key")
+    )
+
     return parsed
 
 
@@ -118,9 +152,9 @@ def read_kafka(spark: SparkSession):
 
 def edits_per_wiki_per_minute(df):
     """1-minute tumbling window: edit count per wiki."""
+    # Watermark is already set upstream in read_kafka(); do not redefine it.
     return (
         df
-        .withWatermark("event_time", "2 minutes")   # late data tolerance
         .groupBy(
             F.window("event_time", "1 minute"),
             "wiki",
@@ -140,10 +174,10 @@ def edits_per_wiki_per_minute(df):
 
 def top_editors_sliding(df):
     """5-minute sliding window (1 min slide): top editors by edit count."""
+    # Watermark is already set upstream in read_kafka(); do not redefine it.
     return (
         df
         .filter(F.col("bot") == False)             # human edits only
-        .withWatermark("event_time", "5 minutes")
         .groupBy(
             F.window("event_time", "5 minutes", "1 minute"),
             "user",
@@ -159,9 +193,9 @@ def top_editors_sliding(df):
 
 def edit_type_breakdown(df):
     """1-minute tumbling window: new / edit / categorize counts."""
+    # Watermark is already set upstream in read_kafka(); do not redefine it.
     return (
         df
-        .withWatermark("event_time", "2 minutes")
         .groupBy(
             F.window("event_time", "1 minute"),
             "type",
