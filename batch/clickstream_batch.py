@@ -23,6 +23,7 @@ Usage:
 """
 
 import sys
+import os
 from pathlib import Path
 
 from pyspark.sql import SparkSession

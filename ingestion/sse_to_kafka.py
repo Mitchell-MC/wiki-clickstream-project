@@ -85,7 +85,11 @@ def _open_sse_stream(last_event_id: str | None = None):
     Open the Wikimedia EventStreams SSE connection.
     Pass last_event_id to resume from where we left off.
     """
-    headers = {"Accept": "text/event-stream"}
+    headers = {
+        "Accept": "text/event-stream",
+        # Wikimedia requires a descriptive User-Agent for all API/stream access
+        "User-Agent": "wiki-clickstream-pipeline/1.0 (https://github.com/Mitchell-MC/wiki-clickstream-project)",
+    }
     if last_event_id:
         headers["Last-Event-ID"] = last_event_id
 

@@ -8,6 +8,7 @@ Edit these values to match your environment.
 CLICKSTREAM_BASE_URL = "https://dumps.wikimedia.org/other/clickstream"
 
 # Months to download, e.g. ["2024-01", "2024-02", ..., "2024-06"]
+# (set to a single month for a quick test run)
 CLICKSTREAM_MONTHS = [
     "2024-10",
     "2024-11",
@@ -45,8 +46,8 @@ SPARK_APP_NAME = "WikiPipeline"
 SPARK_MASTER = "local[*]"
 
 # Kafka package required by Spark Structured Streaming
-# Match the Scala/Spark version of your installation
-SPARK_KAFKA_PACKAGE = "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.0"
+# pyspark 3.5.4 / Spark 3.5.4 uses Scala 2.12
+SPARK_KAFKA_PACKAGE = "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.4"
 
 # Streaming output path (checkpointing + sink)
 STREAMING_CHECKPOINT_DIR = "data/streaming_checkpoint"
