@@ -98,7 +98,7 @@ def read_kafka(spark: SparkSession):
         .option("subscribe", config.KAFKA_TOPIC_EDITS)
         .option("startingOffsets", "latest")
         # If the consumer falls too far behind Kafka will raise; cap the rate
-        .option("maxOffsetsPerTrigger", 10_000)
+        .option("maxOffsetsPerTrigger", config.KAFKA_MAX_OFFSETS_PER_TRIGGER)
         # If Kafka purges offsets that the checkpoint recorded (e.g. after a
         # broker restart with short retention), skip the missing data instead
         # of crashing.  This keeps the job alive across Docker restarts.
@@ -144,7 +144,7 @@ def read_kafka(spark: SparkSession):
         parsed
         .withColumn("_kafka_key", F.col("key").cast("string"))
         .drop("key")
-        .withWatermark("event_time", "5 minutes")
+        .withWatermark("event_time", config.SPARK_STREAM_WATERMARK)
         .dropDuplicates(["_kafka_key"])
         .drop("_kafka_key")
     )
@@ -254,6 +254,10 @@ def main():
     spark = build_spark()
 
     print(f"Reading from Kafka topic '{config.KAFKA_TOPIC_EDITS}' …")
+    print(
+        "  Kafka tuning: maxOffsetsPerTrigger=%s watermark=%s"
+        % (config.KAFKA_MAX_OFFSETS_PER_TRIGGER, config.SPARK_STREAM_WATERMARK)
+    )
     edits = read_kafka(spark)
 
     # Build aggregated streams

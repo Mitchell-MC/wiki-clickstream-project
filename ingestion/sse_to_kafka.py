@@ -55,14 +55,28 @@ def _make_producer(retries: int = 10, delay: float = 5.0) -> KafkaProducer:
                 bootstrap_servers=config.KAFKA_BOOTSTRAP_SERVERS,
                 # Serialize dicts → UTF-8 JSON bytes
                 value_serializer=lambda v: json.dumps(v).encode("utf-8"),
-                # Wait for leader acknowledgement only (good for high throughput)
-                acks=1,
-                # Compress messages to reduce network/disk usage
-                compression_type="gzip",
-                # Retry on transient send errors
-                retries=5,
+                # Tune for throughput by allowing the producer to batch briefly
+                # before sending larger payloads to Kafka.
+                linger_ms=config.KAFKA_PRODUCER_LINGER_MS,
+                batch_size=config.KAFKA_PRODUCER_BATCH_SIZE,
+                buffer_memory=config.KAFKA_PRODUCER_BUFFER_MEMORY,
+                # Compression reduces wire size substantially for verbose JSON.
+                compression_type=config.KAFKA_PRODUCER_COMPRESSION,
+                # Wait for leader acknowledgement by default; increase to "all"
+                # in config for stricter durability.
+                acks=config.KAFKA_PRODUCER_ACKS,
+                # Retry on transient send errors.
+                retries=config.KAFKA_PRODUCER_RETRIES,
             )
             log.info("Connected to Kafka at %s", config.KAFKA_BOOTSTRAP_SERVERS)
+            log.info(
+                "Producer settings: acks=%s compression=%s linger_ms=%s batch_size=%s buffer_memory=%s",
+                config.KAFKA_PRODUCER_ACKS,
+                config.KAFKA_PRODUCER_COMPRESSION,
+                config.KAFKA_PRODUCER_LINGER_MS,
+                config.KAFKA_PRODUCER_BATCH_SIZE,
+                config.KAFKA_PRODUCER_BUFFER_MEMORY,
+            )
             return producer
         except NoBrokersAvailable:
             log.warning(

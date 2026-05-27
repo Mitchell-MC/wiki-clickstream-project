@@ -49,14 +49,35 @@ The project comprises 3 major sections:
 
 ## Dataset Choices
 
-This project intentionally combines two Wikimedia datasets because each answers a different class of question.
+This project intentionally combines two Wikimedia datasets because each answers a different class of question. There are also several viable alternatives, but they trade off freshness, richness, and implementation complexity differently.
 
-| Data source | Data source type | Cost | Freshness | Best use | Advantages |
-| --- | --- | --- | --- | --- | --- |
-| Wikimedia clickstream dumps | Monthly TSV.GZ files | Free | Monthly | Historical navigation analysis | Large-scale article-to-article traffic, stable monthly snapshots, ideal for batch processing |
-| Wikimedia EventStreams recentchange | Server-Sent Events stream | Free | Near real time | Live edit monitoring | Continuous event feed, supports reconnect with Last-Event-ID, good fit for Kafka and streaming windows |
+| Data source | Data source type | Cost | Freshness | Best business questions | Advantages over other options | Trade-offs |
+| --- | --- | --- | --- | --- | --- | --- |
+| Wikimedia clickstream dumps | Monthly TSV.GZ files | Free | Monthly | Which articles receive the most inbound traffic? Which pages send users onward? Which page-to-page journeys dominate navigation? | Best source for article-to-article path analysis because it already contains aggregated referer-resource pairs. Much more efficient than reconstructing navigation from raw revision or request-style data. | Monthly cadence means it is not suitable for live monitoring or same-day trend detection. |
+| Wikimedia EventStreams recentchange | Server-Sent Events stream | Free | Near real time | How active is editing right now? Are bots dominating activity? Which users or wikis are most active in the last few minutes? | Best source for operational, live dashboards. More efficient than polling APIs because the platform pushes events continuously and supports resume semantics with Last-Event-ID. | It describes editorial activity, not reader navigation or page popularity. |
+| Wikimedia Analytics Pageviews API | REST API | Free | Hourly to daily style pageview aggregates | Which articles are attracting demand? How is readership trending? Which pages should be prioritized for editorial attention or promotion? | Best source for direct demand measurement. More efficient than clickstream when the question is pure page popularity rather than navigation pathing, because you can query per article or project without running a large batch parse. | Does not explain where readers came from or where they clicked next, so it cannot replace clickstream for path analysis. |
+| MediaWiki Action API | REST-like query API | Free | Near real time query results | What metadata describes a page or revision? Which categories, templates, revisions, or contributors help explain article behavior? | Best source for targeted enrichment. More efficient than bulk dumps when you only need selective metadata for a shortlist of pages surfaced by the dashboard. | Less suitable as a primary analytics backbone because large-scale historical extraction requires heavy pagination and many API calls. |
+| Wikimedia page-change or page-links EventStreams | Event stream | Free | Near real time | Which pages are being created, moved, deleted, or having link structures changed? How do structural page changes correlate with edit spikes? | Better than recentchange alone when the business question depends on structural events rather than generic edits. Useful for future feature expansion around page lifecycle monitoring. | Narrower and more specialized than recentchange, so it is usually a supplement rather than the main feed. |
+| Wikimedia history or XML dumps | Bulk dump files | Free | Periodic snapshots | How has revision history evolved over long horizons? Which editors, reverts, or content changes shaped important articles over time? | Best depth for long-range forensic or contributor analysis. More complete than live streams for historical reconstruction. | Much heavier to process than the chosen sources and significantly less efficient for a local dashboard-oriented project. |
 
-The project uses both because the clickstream dumps explain how readers move through Wikipedia over time, while EventStreams captures how the encyclopedia is being edited right now.
+For this project, the chosen pair remains the strongest:
+
+- Clickstream dumps are the most efficient way to answer navigation questions because the referer-resource relationships are already aggregated and ready for batch ranking.
+- EventStreams recentchange is the most efficient way to answer live activity questions because the pipeline can react to pushed events instead of polling.
+
+The main alternatives are useful when the business question changes:
+
+- Use Pageviews API when the question is demand, popularity, or readership trend rather than navigation path.
+- Use MediaWiki Action API when the question is page metadata, revision context, or selective enrichment of already identified pages.
+- Use history dumps when the question is deep historical contributor behavior and you are willing to trade simplicity for completeness.
+- Use specialized EventStreams topics when you care about page lifecycle or link-structure changes instead of the broader recentchange firehose.
+
+In practical terms, that means this project's current datasets are optimized for two high-value questions:
+
+- What are readers doing across Wikipedia over time?
+- What are editors doing on Wikipedia right now?
+
+Other data sources can improve the project, but mostly as complements rather than replacements.
 
 ## High-Level Architecture Diagram
 

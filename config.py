@@ -41,6 +41,19 @@ BATCH_PARTITION_OVERWRITE_MODE = "dynamic"
 KAFKA_BOOTSTRAP_SERVERS = "localhost:9092"
 KAFKA_TOPIC_EDITS = "wiki-edits"
 
+# Producer tuning knobs. These make the Kafka send path explicit instead of
+# relying on small, tutorial-style defaults.
+KAFKA_PRODUCER_ACKS = 1
+KAFKA_PRODUCER_COMPRESSION = "lz4"
+KAFKA_PRODUCER_LINGER_MS = 10
+KAFKA_PRODUCER_BATCH_SIZE = 128 * 1024
+KAFKA_PRODUCER_BUFFER_MEMORY = 64 * 1024 * 1024
+KAFKA_PRODUCER_RETRIES = 5
+
+# Streaming consumer controls.
+KAFKA_MAX_OFFSETS_PER_TRIGGER = 10_000
+SPARK_STREAM_WATERMARK = "5 minutes"
+
 # ── EventStreams SSE ───────────────────────────────────────────────────────────
 # Wikimedia EventStreams endpoint (streams recentchange events for all wikis)
 EVENTSTREAMS_URL = (
