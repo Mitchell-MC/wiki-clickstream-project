@@ -84,7 +84,7 @@ def build_spark() -> SparkSession:
         .config("spark.sql.adaptive.coalescePartitions.enabled", "true")
         .config("spark.sql.adaptive.skewJoin.enabled",           "true")
         # ── Vectorised Parquet reads ──────────────────────────────────────────
-        # Reads column batches instead of one row at a time, fully utilising
+        # Reads column batches instead of one row at a time, fully using
         # CPU SIMD instructions for aggregation operations.
         .config("spark.sql.parquet.columnarReaderBatchSize", "4096")
         # ── Dynamic resource allocation ───────────────────────────────────────

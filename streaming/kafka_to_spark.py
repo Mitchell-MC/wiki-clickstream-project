@@ -99,6 +99,10 @@ def read_kafka(spark: SparkSession):
         .option("startingOffsets", "latest")
         # If the consumer falls too far behind Kafka will raise; cap the rate
         .option("maxOffsetsPerTrigger", 10_000)
+        # If Kafka purges offsets that the checkpoint recorded (e.g. after a
+        # broker restart with short retention), skip the missing data instead
+        # of crashing.  This keeps the job alive across Docker restarts.
+        .option("failOnDataLoss", "false")
         .load()
     )
 
